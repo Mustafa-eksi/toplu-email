@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Denme</title>
+</head>
+<body>
+    <input type="file" id="file">gönderilecek kişiler</input>
+    <input type="file" id="filepdf" multiple="true">gönderilecek dosyalar</input>
+    <script>
+
+        function dosyalariOku(filepaths, reader) {
+            let result = []
+            for(let i = 0; i < filepaths.length; i++) {   
+                reader.onload = function (evt) {
+                    result.push({content: btoa(evt.target.result), name: filepaths[i].name})
+                }
+                reader.readAsBinaryString(filepaths[i]);
+                reader.onerror = function (evt) {
+                    console.error("errrrrr: " + filepaths[i])
+                }
+            }
+            return result
+        }
+        const filep = document.getElementById("file");
+        const filepdf = document.getElementById("filepdf");
+        filep.addEventListener('change', ()=>{
+            var file = filep.files[0];
+            if (file) {
+                var reader = new FileReader();
+                reader.onload = function (evt) {
+                    let newReader = new FileReader();
+                    let dosyalar = dosyalariOku(filepdf.files, newReader)
+                    console.log(JSON.stringify(dosyalar))
+                    console.log(btoa(evt.target.result))
+                    /*fetch("http://localhost:8080/mailnow", {
+                        mode: "cors",
+                        method: "POST",
+                        headers: {'Content-Type': 'application/json'},
+                        body: `{"sender_mail":"mustafa.eksi0@hotmail.com","sender_password":"BA.34y7z","to_adresses":"${btoa(evt.target.result)}","subject":"isimli dosya gönder","email_text":"acaba gidecek mi","email_files":[{"content":"${btoa(evt.target.result)}", "name":"${filep.files[0].name}"}]}`
+                    }).then(v=>{
+                        console.log(v.text());
+                    })*/
+                }
+                reader.readAsBinaryString(file);
+                reader.onerror = function (evt) {
+                    console.error("errrrrr")
+                }
+            }
+        });
+    </script>
+</body>
+</html>

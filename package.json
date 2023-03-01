@@ -1,0 +1,24 @@
+{
+  "name": "toplu-email",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "npx tsc && node .\\index.js"
+  },
+  "author": "Mustafa Ekşi",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "exceljs": "^4.3.0",
+    "express": "^4.18.2",
+    "nodemailer": "^6.9.1"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.13",
+    "@types/express": "^4.17.17",
+    "@types/nodemailer": "^6.4.7",
+    "typescript": "^4.9.5"
+  }
+}
