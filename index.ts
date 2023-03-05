@@ -4,7 +4,11 @@ import * as cors from "cors";
 import * as common from './common';
 import * as exceljs from 'exceljs';
 import {Readable} from 'stream'
-import * as fs from 'fs'
+import credentials from './email-credentials.json';
+import { MongoClient } from "mongodb";
+let dbcl = new MongoClient("mongodb://127.0.0.1:27017"); // bu bir sunucuda çalıştırılacağında farklı olabilir
+let emaildb = dbcl.db("toplu-email");
+let gonderilenler = emaildb.collection('gonderilenler');
 
 const app = express();
 const port = 8080;
@@ -13,9 +17,20 @@ app.use(express.json({limit: '50mb'}));
 
 app.use(cors.default());
 
-function getService(raw_adress: string): string { // mustafa@gmail.com
-    return raw_adress.split("@")[1].split(".")[0];
-}
+var mailer = nodemailer.createTransport(credentials);
+
+let pending_mails: Mail[] = [];
+setInterval(()=>{ // 12:45:01 12:44:59 -> 12:45:29
+    if(pending_mails) {
+        pending_mails.forEach(async(e)=>{
+            if(e.mail_date.getTime() - new Date().getTime() < 30000) {
+                await sendMultipleMails(e).catch((err)=>{
+                    console.error(err)
+                });
+            }
+        })
+    }
+}, 500)
 
 interface Attachment {
     content?: string | Buffer;
@@ -28,34 +43,33 @@ interface Attachment {
 }
 
 interface Mail {
-    subject: string, email_text: string, email_files: Attachment[]
-}
+    subject: string, email_text: string, email_files: Attachment[], mail_date: Date, to_adresses: string[]
+};
 
-async function sendSingleMail(mailer: nodemailer.Transporter, from:string, mail: Mail, to_adress:string) {
-    let info = await mailer.sendMail({
-        to: to_adress,
-        from:from,
-        subject:mail.subject,
-        text:mail.email_text,
-        attachments: mail.email_files
-    }).catch(err=>{throw err})
-    return info
-}
 
-async function sendMultipleMails(s_mail: string, s_password: string, mail: Mail, to_adresses: string[]) {
-    var mailer = nodemailer.createTransport({
-        service: getService(s_mail),
-        auth: {
-            user: s_mail,
-            pass: s_password
-        }
-    });
-    for(let i = 0; i < to_adresses.length; i++) {
-        await sendSingleMail(mailer, s_mail, mail, to_adresses[i]).catch(err => {
+interface Gonderilen {
+    mail: Mail,
+    to_adresses: string[]
+};
+
+async function sendMultipleMails(mail: Mail) {
+    let gitmeyenler: string[];
+    for(let i = 0; i < mail.to_adresses.length; i++) {
+        await mailer.sendMail({
+            to: mail.to_adresses[i],
+            from:credentials.auth.user,
+            subject:mail.subject,
+            text:mail.email_text,
+            attachments: mail.email_files.length === 0 ? undefined : mail.email_files
+        }).catch(err=>{
             if(common.debugMode)
                 console.error(err);
         })
     }
+    // FIXME: gönderilirken hata çıkan kullanıcıları veri tabanına kaydetmemek daha mantıklı olabilir.
+    gonderilenler.insertOne({
+        mail: mail
+    } as Gonderilen);
 }
 
 async function extractReceivers(file: Buffer): Promise<string[]> {
@@ -78,21 +92,25 @@ app.get('/webui', (req, res)=>{
 });
 
 app.post('/mailnow', async(req, res)=>{
-    const keys = ["sender_mail", "sender_password", "to_adresses", "subject", "email_text", "email_files"]
-    if(!common.expectKeys(req.body,keys)) {
+    //FIXME: dosyasız mail göndermeyi düzelt
+    const reqtype: common.CommonObject = [{key: "to_adresses", type: "string"}, {key: "subject", type:"string"}, {key:"email_text", type:"string"}, {key:"email_files", type:"arrayof object", typeobj: [{key:"content", type:"string"}, {key:"name", type:"string"}]}]
+    const reqnames: string[] = ["to_adresses","subject", "email_text", "email_files", /*"mail_date"*/"gonderim"]
+    if(!common./*expectType*/expectKeys(req.body,/*reqtype*/reqnames)) {
         return common.ResErr(res, 400, "Girdi yanlış!")
     }
-    let file = Buffer.from(req.body.to_adresses, 'base64')
-    let sonuc: string[] = await extractReceivers(file).catch(err=>common.ResErr(res, 500, "extracting receivers: "+err)) ?? [""];
-    console.log(sonuc);
+    Date.now().toLocaleString()
+    let file = Buffer.from(req.body.to_adresses.split(",")[1], 'base64')
+    let emailAlacaklar: string[] = await extractReceivers(file).catch(err=>common.ResErr(res, 500, "extracting receivers: "+err)) ?? [""];
+    console.log(emailAlacaklar);
     let email_files: Attachment[] = [];
+    console.log(req.body.email_files)
     req.body.email_files.forEach((e:{content: string, name: string}) => {
         email_files.push({
-            content: Buffer.from(e.content, 'base64'),
-            filename: e.name
+            content: Buffer.from(e.content.split(",")[1], "base64"),
+            filename: e.name + "." + e.content.substring(e.content.indexOf("/")+1, e.content.indexOf(";"))
         } as Attachment)
     });
-    await sendMultipleMails(req.body.sender_mail, req.body.sender_password, {subject: req.body.subject, email_text:req.body.email_text, email_files:email_files} as Mail, sonuc).catch(err=>common.ResErr(res, 500, "error while sending mails: "+err))
+    await sendMultipleMails({subject: req.body.subject, email_text:req.body.email_text, email_files:email_files, mail_date: new Date(req.body.gonderim), to_adresses: emailAlacaklar} as Mail).catch(err=>common.ResErr(res, 500, "error while sending mails: "+err))
     common.ResSuc(res, "başarıyla gönderildi")
 })
 

@@ -41,41 +41,50 @@ const cors = __importStar(require("cors"));
 const common = __importStar(require("./common"));
 const exceljs = __importStar(require("exceljs"));
 const stream_1 = require("stream");
+const email_credentials_json_1 = __importDefault(require("./email-credentials.json"));
+const mongodb_1 = require("mongodb");
+let dbcl = new mongodb_1.MongoClient("mongodb://127.0.0.1:27017"); // bu bir sunucuda çalıştırılacağında farklı olabilir
+let emaildb = dbcl.db("toplu-email");
+let gonderilenler = emaildb.collection('gonderilenler');
 const app = (0, express_1.default)();
 const port = 8080;
 const link = "http://localhost";
 app.use(express_1.default.json({ limit: '50mb' }));
 app.use(cors.default());
-function getService(raw_adress) {
-    return raw_adress.split("@")[1].split(".")[0];
-}
-function sendSingleMail(mailer, from, mail, to_adress) {
-    return __awaiter(this, void 0, void 0, function* () {
-        let info = yield mailer.sendMail({
-            to: to_adress,
-            from: from,
-            subject: mail.subject,
-            text: mail.email_text,
-            attachments: mail.email_files
-        }).catch(err => { throw err; });
-        return info;
-    });
-}
-function sendMultipleMails(s_mail, s_password, mail, to_adresses) {
-    return __awaiter(this, void 0, void 0, function* () {
-        var mailer = nodemailer_1.default.createTransport({
-            service: getService(s_mail),
-            auth: {
-                user: s_mail,
-                pass: s_password
+var mailer = nodemailer_1.default.createTransport(email_credentials_json_1.default);
+let pending_mails = [];
+setInterval(() => {
+    if (pending_mails) {
+        pending_mails.forEach((e) => __awaiter(void 0, void 0, void 0, function* () {
+            if (e.mail_date.getTime() - new Date().getTime() < 30000) {
+                yield sendMultipleMails(e).catch((err) => {
+                    console.error(err);
+                });
             }
-        });
-        for (let i = 0; i < to_adresses.length; i++) {
-            yield sendSingleMail(mailer, s_mail, mail, to_adresses[i]).catch(err => {
+        }));
+    }
+}, 500);
+;
+;
+function sendMultipleMails(mail) {
+    return __awaiter(this, void 0, void 0, function* () {
+        let gitmeyenler;
+        for (let i = 0; i < mail.to_adresses.length; i++) {
+            yield mailer.sendMail({
+                to: mail.to_adresses[i],
+                from: email_credentials_json_1.default.auth.user,
+                subject: mail.subject,
+                text: mail.email_text,
+                attachments: mail.email_files.length === 0 ? undefined : mail.email_files
+            }).catch(err => {
                 if (common.debugMode)
                     console.error(err);
             });
         }
+        // FIXME: gönderilirken hata çıkan kullanıcıları veri tabanına kaydetmemek daha mantıklı olabilir.
+        gonderilenler.insertOne({
+            mail: mail
+        });
     });
 }
 function extractReceivers(file) {
@@ -99,23 +108,25 @@ app.get('/webui', (req, res) => {
 });
 app.post('/mailnow', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
-    const keys = ["sender_mail", "sender_password", "to_adresses", "subject", "email_text", "email_files"];
-    if (!common.expectKeys(req.body, keys)) {
+    const reqtype = [{ key: "to_adresses", type: "string" }, { key: "subject", type: "string" }, { key: "email_text", type: "string" }, { key: "email_files", type: "arrayof object", typeobj: [{ key: "content", type: "string" }, { key: "name", type: "string" }] }];
+    const reqnames = ["to_adresses", "subject", "email_text", "email_files", /*"mail_date"*/ "gonderim"];
+    if (!common. /*expectType*/expectKeys(req.body, /*reqtype*/ reqnames)) {
         return common.ResErr(res, 400, "Girdi yanlış!");
     }
-    let file = Buffer.from(req.body.to_adresses, 'base64');
-    let sonuc = (_a = yield extractReceivers(file).catch(err => common.ResErr(res, 500, "extracting receivers: " + err))) !== null && _a !== void 0 ? _a : [""];
-    console.log(sonuc);
+    Date.now().toLocaleString();
+    let file = Buffer.from(req.body.to_adresses.split(",")[1], 'base64');
+    let emailAlacaklar = (_a = yield extractReceivers(file).catch(err => common.ResErr(res, 500, "extracting receivers: " + err))) !== null && _a !== void 0 ? _a : [""];
+    console.log(emailAlacaklar);
     let email_files = [];
     req.body.email_files.forEach((e) => {
         email_files.push({
-            content: Buffer.from(e.content, 'base64'),
-            filename: e.name
+            content: Buffer.from(e.content.split(",")[1], "base64"),
+            filename: e.name + "." + e.content.substring(e.content.indexOf("/") + 1, e.content.indexOf(";"))
         });
     });
-    yield sendMultipleMails(req.body.sender_mail, req.body.sender_password, { subject: req.body.subject, email_text: req.body.email_text, email_files: email_files }, sonuc).catch(err => common.ResErr(res, 500, "error while sending mails: " + err));
+    yield sendMultipleMails({ subject: req.body.subject, email_text: req.body.email_text, email_files: email_files, mail_date: new Date(req.body.gonderim), to_adresses: emailAlacaklar }).catch(err => common.ResErr(res, 500, "error while sending mails: " + err));
     common.ResSuc(res, "başarıyla gönderildi");
 }));
 app.listen(port, () => {
-    console.log(`${link}:${port}`);
+    console.log(`${link}:${port}/webui`);
 });

@@ -1,3 +1,5 @@
 node_modules/
 frontend/*
 !frontend/webui.html
+email-credentials.json
+*.zip

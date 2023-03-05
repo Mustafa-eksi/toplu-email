@@ -53,6 +53,49 @@ export function expectKeys(obj: Object, keys: string[]): boolean {
     }
 }
 
+export interface CommonType {
+    key:string,
+    type:string,
+    typeobj?: CommonObject
+}
+
+export type CommonObject = CommonType[];
+
+export function expectType(obj: Indexable, type: CommonObject): boolean {
+    for(let i = 0; i < type.length; i++) {
+        if(!obj[type[i].key]) {
+            if(debugMode)
+                console.log(`expectType: expected ${type[i].key}: ${type[i].type}. But not found`)
+            return false;
+        }
+        if(type[i].key.startsWith("arrayof")) {
+            if(!Array.isArray(obj[type[i].key]))
+                return false;
+            const typeofarray = type[i].type.substring(8);
+            if(typeofarray === "object" && type[i].typeobj) {
+                console.log("Hmm")
+                return expectType(obj[type[i].key][0], type[i].typeobj ?? []);
+            }
+            if(typeof obj[type[i].key][0] !== typeofarray) {
+                if(debugMode)
+                    console.log(`expectType: expected ${type[i].key}: ${type[i].type}. But found ${type[i].key}: arrayof ${typeof obj[type[i].key][0]}`)
+                return false;
+            }
+            continue
+        }
+        if(type[i].type === "object" && type[i].typeobj) {
+            return expectType(obj[type[i].key], type[i].typeobj ?? []);
+        }
+        if(typeof obj[type[i].key] !== type[i].type) {
+            if(debugMode)
+                console.log(`expectType: expected ${type[i].key}: ${type[i].type}. But found ${type[i].key}: ${typeof obj[type[i].key]}`)
+            return false;
+        }
+      
+    }
+    return true;
+}
+
 export function soruisaretiyap(sayi:number): string {
     return "?".repeat(sayi).split('').join(",");
 }

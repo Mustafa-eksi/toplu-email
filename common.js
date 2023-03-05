@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.degerleriAl = exports.soruisaretiyap = exports.expectKeys = exports.ResSuc = exports.ResErr = exports.ERRORS = exports.debugMode = void 0;
+exports.degerleriAl = exports.soruisaretiyap = exports.expectType = exports.expectKeys = exports.ResSuc = exports.ResErr = exports.ERRORS = exports.debugMode = void 0;
 exports.debugMode = true;
 var ERRORS;
 (function (ERRORS) {
@@ -55,6 +55,41 @@ function expectKeys(obj, keys) {
     }
 }
 exports.expectKeys = expectKeys;
+function expectType(obj, type) {
+    var _a, _b;
+    for (let i = 0; i < type.length; i++) {
+        if (!obj[type[i].key]) {
+            if (exports.debugMode)
+                console.log(`expectType: expected ${type[i].key}: ${type[i].type}. But not found`);
+            return false;
+        }
+        if (type[i].key.startsWith("arrayof")) {
+            if (!Array.isArray(obj[type[i].key]))
+                return false;
+            const typeofarray = type[i].type.substring(8);
+            if (typeofarray === "object" && type[i].typeobj) {
+                console.log("Hmm");
+                return expectType(obj[type[i].key][0], (_a = type[i].typeobj) !== null && _a !== void 0 ? _a : []);
+            }
+            if (typeof obj[type[i].key][0] !== typeofarray) {
+                if (exports.debugMode)
+                    console.log(`expectType: expected ${type[i].key}: ${type[i].type}. But found ${type[i].key}: arrayof ${typeof obj[type[i].key][0]}`);
+                return false;
+            }
+            continue;
+        }
+        if (type[i].type === "object" && type[i].typeobj) {
+            return expectType(obj[type[i].key], (_b = type[i].typeobj) !== null && _b !== void 0 ? _b : []);
+        }
+        if (typeof obj[type[i].key] !== type[i].type) {
+            if (exports.debugMode)
+                console.log(`expectType: expected ${type[i].key}: ${type[i].type}. But found ${type[i].key}: ${typeof obj[type[i].key]}`);
+            return false;
+        }
+    }
+    return true;
+}
+exports.expectType = expectType;
 function soruisaretiyap(sayi) {
     return "?".repeat(sayi).split('').join(",");
 }
