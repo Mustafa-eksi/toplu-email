@@ -55,11 +55,14 @@ var mailer = nodemailer_1.default.createTransport(email_credentials_json_1.defau
 let pending_mails = [];
 setInterval(() => {
     if (pending_mails) {
-        pending_mails.forEach((e) => __awaiter(void 0, void 0, void 0, function* () {
+        pending_mails.forEach((e, i) => __awaiter(void 0, void 0, void 0, function* () {
+            if (!e.mail_date)
+                return;
             if (e.mail_date.getTime() - new Date().getTime() < 30000) {
-                yield sendMultipleMails(e).catch((err) => {
+                sendMultipleMails(e).catch((err) => {
                     console.error(err);
                 });
+                pending_mails.splice(i, 1);
             }
         }));
     }
@@ -108,6 +111,7 @@ app.get('/webui', (req, res) => {
 });
 app.post('/mailnow', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
+    //FIXME: dosyasız mail göndermeyi düzelt
     const reqtype = [{ key: "to_adresses", type: "string" }, { key: "subject", type: "string" }, { key: "email_text", type: "string" }, { key: "email_files", type: "arrayof object", typeobj: [{ key: "content", type: "string" }, { key: "name", type: "string" }] }];
     const reqnames = ["to_adresses", "subject", "email_text", "email_files", /*"mail_date"*/ "gonderim"];
     if (!common. /*expectType*/expectKeys(req.body, /*reqtype*/ reqnames)) {
@@ -118,14 +122,22 @@ app.post('/mailnow', (req, res) => __awaiter(void 0, void 0, void 0, function* (
     let emailAlacaklar = (_a = yield extractReceivers(file).catch(err => common.ResErr(res, 500, "extracting receivers: " + err))) !== null && _a !== void 0 ? _a : [""];
     console.log(emailAlacaklar);
     let email_files = [];
+    console.log(req.body.email_files);
     req.body.email_files.forEach((e) => {
         email_files.push({
             content: Buffer.from(e.content.split(",")[1], "base64"),
             filename: e.name + "." + e.content.substring(e.content.indexOf("/") + 1, e.content.indexOf(";"))
         });
     });
-    yield sendMultipleMails({ subject: req.body.subject, email_text: req.body.email_text, email_files: email_files, mail_date: new Date(req.body.gonderim), to_adresses: emailAlacaklar }).catch(err => common.ResErr(res, 500, "error while sending mails: " + err));
-    common.ResSuc(res, "başarıyla gönderildi");
+    var mail = { subject: req.body.subject, email_text: req.body.email_text, email_files: email_files, to_adresses: emailAlacaklar };
+    if (req.body.gonderim !== "") {
+        mail.mail_date = new Date(req.body.gonderim);
+        pending_mails.push(mail);
+    }
+    else {
+        yield sendMultipleMails(mail).catch(err => common.ResErr(res, 500, "error while sending mails: " + err));
+    }
+    common.ResSuc(res, "başarıyla gönderildi/gönderilmesi planlandı");
 }));
 app.listen(port, () => {
     console.log(`${link}:${port}/webui`);

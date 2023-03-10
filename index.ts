@@ -22,11 +22,14 @@ var mailer = nodemailer.createTransport(credentials);
 let pending_mails: Mail[] = [];
 setInterval(()=>{ // 12:45:01 12:44:59 -> 12:45:29
     if(pending_mails) {
-        pending_mails.forEach(async(e)=>{
+        pending_mails.forEach(async(e,i)=>{
+            if(!e.mail_date)
+                return;
             if(e.mail_date.getTime() - new Date().getTime() < 30000) {
-                await sendMultipleMails(e).catch((err)=>{
+                sendMultipleMails(e).catch((err)=>{
                     console.error(err)
                 });
+                pending_mails.splice(i,1);
             }
         })
     }
@@ -43,7 +46,7 @@ interface Attachment {
 }
 
 interface Mail {
-    subject: string, email_text: string, email_files: Attachment[], mail_date: Date, to_adresses: string[]
+    subject: string, email_text: string, email_files: Attachment[], mail_date?: Date, to_adresses: string[]
 };
 
 
@@ -110,8 +113,14 @@ app.post('/mailnow', async(req, res)=>{
             filename: e.name + "." + e.content.substring(e.content.indexOf("/")+1, e.content.indexOf(";"))
         } as Attachment)
     });
-    await sendMultipleMails({subject: req.body.subject, email_text:req.body.email_text, email_files:email_files, mail_date: new Date(req.body.gonderim), to_adresses: emailAlacaklar} as Mail).catch(err=>common.ResErr(res, 500, "error while sending mails: "+err))
-    common.ResSuc(res, "başarıyla gönderildi")
+    var mail: Mail = {subject: req.body.subject, email_text:req.body.email_text, email_files:email_files, to_adresses: emailAlacaklar};
+    if(req.body.gonderim !== "") {
+        mail.mail_date = new Date(req.body.gonderim);
+        pending_mails.push(mail);
+    }else {
+        await sendMultipleMails(mail).catch(err=>common.ResErr(res, 500, "error while sending mails: "+err))
+    }
+    common.ResSuc(res, "başarıyla gönderildi/gönderilmesi planlandı")
 })
 
 app.listen(port, () => {
